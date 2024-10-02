@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Game Client</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+        #controls {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="controls">
+        <p>Use arrow keys to move your player</p>
+        <p>Connection status: <span id="status">Disconnected</span></p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusElement = document.getElementById('status');
+        let ws;
+        let myPlayerId;
+        let players = {};
+
+        function connect() {
+            ws = new WebSocket('ws://localhost:8080/ws');
+            
+            ws.onopen = function() {
+                statusElement.textContent = 'Connected';
+                statusElement.style.color = 'green';
+            };
+
+            ws.onclose = function() {
+                statusElement.textContent = 'Disconnected';
+                statusElement.style.color = 'red';
+                setTimeout(connect, 1000); 
+            };
+
+            ws.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                if (message.type === 'gameState') {
+                    players = message.payload;
+                    if (!myPlayerId) {
+                        const playerIds = Object.keys(players);
+                        if (playerIds.length > 0) {
+                            myPlayerId = playerIds[0];
+                        }
+                    }
+                }
+            };
+        }
+
+        function sendMove(dx, dy) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'move',
+                    payload: { dx, dy }
+                }));
+            }
+        }
+
+        function drawPlayers() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            Object.values(players).forEach(player => {
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, 20, 0, 2 * Math.PI);
+                if (player.id === myPlayerId) {
+                    ctx.fillStyle = 'blue';
+                } else {
+                    ctx.fillStyle = 'red';
+                }
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'center';
+                ctx.fillText(player.id, player.x, player.y - 25);
+            });
+        }
+
+        function gameLoop() {
+            drawPlayers();
+            requestAnimationFrame(gameLoop);
+        }
+
+        const moveSpeed = 5;
+        const keys = {};
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        setInterval(() => {
+            let dx = 0;
+            let dy = 0;
+
+            if (keys['ArrowLeft']) dx -= moveSpeed;
+            if (keys['ArrowRight']) dx += moveSpeed;
+            if (keys['ArrowUp']) dy -= moveSpeed;
+            if (keys['ArrowDown']) dy += moveSpeed;
+
+            if (dx !== 0 || dy !== 0) {
+                sendMove(dx, dy);
+            }
+        }, 1000 / 60);
+
+        connect();
+        gameLoop();
+    </script>
+</body>
+</html>

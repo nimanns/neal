@@ -1,13 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Game Client</title>
+    <title>Enhanced Game Client</title>
     <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
         canvas {
             border: 1px solid black;
+            margin-bottom: 10px;
         }
         #controls {
             margin-top: 10px;
+        }
+        #scoreboard {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 10px;
+            min-width: 200px;
+        }
+        #scoreboard h2 {
+            margin-top: 0;
         }
     </style>
 </head>
@@ -15,16 +31,27 @@
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <div id="controls">
         <p>Use arrow keys to move your player</p>
+        <p>Collect the gold circles to score points!</p>
         <p>Connection status: <span id="status">Disconnected</span></p>
+    </div>
+    <div id="scoreboard">
+        <h2>Scoreboard</h2>
+        <div id="scores"></div>
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const statusElement = document.getElementById('status');
+        const scoresElement = document.getElementById('scores');
         let ws;
         let myPlayerId;
-        let players = {};
+        let gameState = {
+            players: {},
+            collectibles: {},
+            worldWidth: 800,
+            worldHeight: 600
+        };
 
         function connect() {
             ws = new WebSocket('ws://localhost:8080/ws');
@@ -37,19 +64,20 @@
             ws.onclose = function() {
                 statusElement.textContent = 'Disconnected';
                 statusElement.style.color = 'red';
-                setTimeout(connect, 1000); 
+                setTimeout(connect, 1000);
             };
 
             ws.onmessage = function(event) {
                 const message = JSON.parse(event.data);
                 if (message.type === 'gameState') {
-                    players = message.payload;
+                    gameState = message.payload;
                     if (!myPlayerId) {
-                        const playerIds = Object.keys(players);
+                        const playerIds = Object.keys(gameState.players);
                         if (playerIds.length > 0) {
                             myPlayerId = playerIds[0];
                         }
                     }
+                    updateScoreboard();
                 }
             };
         }
@@ -63,28 +91,48 @@
             }
         }
 
-        function drawPlayers() {
+        function drawGame() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            Object.values(players).forEach(player => {
+            Object.values(gameState.collectibles).forEach(collectible => {
                 ctx.beginPath();
-                ctx.arc(player.x, player.y, 20, 0, 2 * Math.PI);
-                if (player.id === myPlayerId) {
-                    ctx.fillStyle = 'blue';
-                } else {
-                    ctx.fillStyle = 'red';
-                }
+                ctx.arc(collectible.x, collectible.y, collectible.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = collectible.color;
+                ctx.fill();
+                ctx.stroke();
+            });
+            
+            Object.values(gameState.players).forEach(player => {
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius, 0, 2 * Math.PI);
+                ctx.fillStyle = player.color;
                 ctx.fill();
                 ctx.stroke();
                 
                 ctx.fillStyle = 'black';
                 ctx.textAlign = 'center';
+                ctx.font = '14px Arial';
                 ctx.fillText(player.id, player.x, player.y - 25);
+                ctx.fillText(`Score: ${player.score}`, player.x, player.y + 35);
             });
         }
 
+        function updateScoreboard() {
+            const players = Object.values(gameState.players)
+                .sort((a, b) => b.score - a.score);
+            
+            scoresElement.innerHTML = players
+                .map(player => `
+                    <div style="margin: 5px 0; display: flex; justify-content: space-between;">
+                        <span style="color: ${player.color}">${player.id}</span>
+                        <span>${player.score}</span>
+                    </div>
+                `)
+                .join('');
+        }
+
         function gameLoop() {
-            drawPlayers();
+            drawGame();
             requestAnimationFrame(gameLoop);
         }
 

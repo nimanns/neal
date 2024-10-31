@@ -8,22 +8,45 @@
             flex-direction: column;
             align-items: center;
             font-family: Arial, sans-serif;
+            background: #f0f0f0;
         }
         canvas {
             border: 1px solid black;
             margin-bottom: 10px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
         #controls {
             margin-top: 10px;
+            text-align: center;
         }
         #scoreboard {
             border: 1px solid #ccc;
             padding: 10px;
             margin-top: 10px;
             min-width: 200px;
+            background: white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
         }
         #scoreboard h2 {
             margin-top: 0;
+        }
+        .power-up-legend {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background: white;
+        }
+        .power-up-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .power-up-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
         }
     </style>
 </head>
@@ -31,8 +54,23 @@
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <div id="controls">
         <p>Use arrow keys to move your player</p>
-        <p>Collect the gold circles to score points!</p>
+        <p>Collect gold circles for points!</p>
         <p>Connection status: <span id="status">Disconnected</span></p>
+    </div>
+    <div class="power-up-legend">
+        <h3>Power-ups</h3>
+        <div class="power-up-item">
+            <div class="power-up-color" style="background: #FF0000"></div>
+            <span>Speed Boost - Move Faster</span>
+        </div>
+        <div class="power-up-item">
+            <div class="power-up-color" style="background: #00FF00"></div>
+            <span>Size Increase - Grow Larger</span>
+        </div>
+        <div class="power-up-item">
+            <div class="power-up-color" style="background: #0000FF"></div>
+            <span>Points Multiplier - Double Points</span>
+        </div>
     </div>
     <div id="scoreboard">
         <h2>Scoreboard</h2>
@@ -49,6 +87,7 @@
         let gameState = {
             players: {},
             collectibles: {},
+            powerUps: {},
             worldWidth: 800,
             worldHeight: 600
         };
@@ -91,8 +130,55 @@
             }
         }
 
+        function drawPowerUpEffect(player) {
+            if (player.speedMultiplier > 1) {
+                ctx.save();
+                ctx.strokeStyle = '#FF0000';
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius + 5, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.restore();
+            }
+            
+            if (player.pointsMultiplier > 1) {
+                ctx.save();
+                ctx.strokeStyle = '#0000FF';
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius + 8, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        function drawPowerUp(powerUp) {
+            ctx.beginPath();
+            ctx.arc(powerUp.x, powerUp.y, powerUp.radius, 0, 2 * Math.PI);
+            ctx.fillStyle = powerUp.color;
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 14px Arial';
+            let symbol = '';
+            switch(powerUp.type) {
+                case 'speedBoost': symbol = '⚡'; break;
+                case 'sizeIncrease': symbol = '↔'; break;
+                case 'pointsMultiplier': symbol = '×2'; break;
+            }
+            ctx.fillText(symbol, powerUp.x, powerUp.y + 5);
+        }
+
         function drawGame() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            Object.values(gameState.powerUps).forEach(powerUp => {
+                drawPowerUp(powerUp);
+            });
             
             Object.values(gameState.collectibles).forEach(collectible => {
                 ctx.beginPath();
@@ -103,17 +189,31 @@
             });
             
             Object.values(gameState.players).forEach(player => {
+                drawPowerUpEffect(player);
+                
                 ctx.beginPath();
                 ctx.arc(player.x, player.y, player.radius, 0, 2 * Math.PI);
                 ctx.fillStyle = player.color;
                 ctx.fill();
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 1;
                 ctx.stroke();
                 
                 ctx.fillStyle = 'black';
                 ctx.textAlign = 'center';
                 ctx.font = '14px Arial';
                 ctx.fillText(player.id, player.x, player.y - 25);
-                ctx.fillText(`Score: ${player.score}`, player.x, player.y + 35);
+                
+                let scoreText = `Score: ${player.score}`;
+                if (player.pointsMultiplier > 1) {
+                    scoreText += ' (×2)';
+                }
+                ctx.fillText(scoreText, player.x, player.y + 35);
+
+                if (player.speedMultiplier > 1) {
+                    ctx.font = '12px Arial';
+                    ctx.fillText('SPEED+', player.x, player.y - 40);
+                }
             });
         }
 
@@ -122,12 +222,21 @@
                 .sort((a, b) => b.score - a.score);
             
             scoresElement.innerHTML = players
-                .map(player => `
-                    <div style="margin: 5px 0; display: flex; justify-content: space-between;">
-                        <span style="color: ${player.color}">${player.id}</span>
-                        <span>${player.score}</span>
-                    </div>
-                `)
+                .map(player => {
+                    let powerUpIcons = [];
+                    if (player.speedMultiplier > 1) powerUpIcons.push('⚡');
+                    if (player.pointsMultiplier > 1) powerUpIcons.push('×2');
+                    if (player.radius > player.originalRadius) powerUpIcons.push('↔');
+                    
+                    return `
+                        <div style="margin: 5px 0; display: flex; justify-content: space-between;">
+                            <span style="color: ${player.color}">
+                                ${player.id} ${powerUpIcons.join(' ')}
+                            </span>
+                            <span>${player.score}</span>
+                        </div>
+                    `;
+                })
                 .join('');
         }
 
